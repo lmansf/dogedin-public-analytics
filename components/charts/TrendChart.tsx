@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 export type TrendSeries = {
   name: string;
@@ -29,7 +29,23 @@ export default function TrendChart({
   const wrapRef = useRef<HTMLDivElement>(null);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
 
-  const W = 640;
+  // Match the viewBox to the rendered width so 1 SVG unit = 1 CSS px and the
+  // 10px axis text stays legible on phones (a fixed 640 viewBox squeezed into
+  // a ~300px card renders text at ~5px). SSR/first paint uses 640; the
+  // observer corrects it on mount and on resize.
+  const [measuredW, setMeasuredW] = useState<number | null>(null);
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect.width;
+      if (w) setMeasuredW(Math.max(220, Math.round(w)));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const W = measuredW ?? 640;
   const H = height;
   const PAD = { top: 12, right: 14, bottom: 22, left: 40 };
   const innerW = W - PAD.left - PAD.right;
@@ -186,7 +202,7 @@ export default function TrendChart({
 
         {hoverIdx !== null && (
           <div
-            className="pointer-events-none absolute top-1 z-10 border-2 border-black bg-white px-2.5 py-1.5 shadow-hard"
+            className="pointer-events-none absolute top-1 z-10 max-w-[60%] border-2 border-black bg-white px-2.5 py-1.5 shadow-hard"
             style={
               tipFlip
                 ? { right: `${100 - tipLeftPct}%`, marginRight: 8 }

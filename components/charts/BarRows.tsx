@@ -7,8 +7,10 @@ export type BarRow = { label: string; value: number; hint?: string };
 // Horizontal ranked bars. One series, so one hue (no legend needed — the card
 // title names the measure). Marks: 16px thick, 4px rounded at the data end,
 // square at the baseline; every value sits at the bar tip in ink (bars are the
-// one form where a value per mark IS the spec). Hovering a row lifts it and
-// shows a tooltip; a table view keeps everything reachable without hover.
+// one form where a value per mark IS the spec). Hovering (or tapping) a row
+// lifts it and shows the full label + value in a tooltip — the affordance for
+// truncated labels on touch; a table view keeps everything reachable without
+// hover.
 export default function BarRows({
   rows,
   color = "var(--series-3)",
@@ -21,7 +23,10 @@ export default function BarRows({
   maxRows?: number;
 }) {
   const [hover, setHover] = useState<number | null>(null);
-  const shown = rows.slice(0, maxRows);
+  // Drop non-finite values outright: one NaN would poison `max` (NaN% widths)
+  // and print "NaN" as a value. A missing row is honest; "NaN" never is.
+  const finite = rows.filter((r) => Number.isFinite(r.value));
+  const shown = finite.slice(0, maxRows);
   const max = Math.max(1, ...shown.map((r) => r.value));
 
   if (shown.length === 0) {
@@ -60,13 +65,14 @@ export default function BarRows({
               {r.value.toLocaleString("en-US")}
               {unit}
             </span>
-            {hover === i && r.hint && (
-              <span className="pointer-events-none absolute -top-7 left-32 z-10 whitespace-nowrap border-2 border-black bg-white px-2 py-0.5 text-xs font-bold shadow-hard sm:left-40">
-                <strong className="font-black">
+            {hover === i && (
+              <span className="pointer-events-none absolute bottom-full left-0 z-10 mb-1 max-w-full border-2 border-black bg-white px-2 py-0.5 text-xs font-bold shadow-hard">
+                {r.label}{" "}
+                <strong className="font-black tabular-nums">
                   {r.value.toLocaleString("en-US")}
                   {unit}
-                </strong>{" "}
-                <span className="text-black/60">{r.hint}</span>
+                </strong>
+                {r.hint && <span className="text-black/60"> · {r.hint}</span>}
               </span>
             )}
           </li>
@@ -78,7 +84,7 @@ export default function BarRows({
         </summary>
         <table className="mt-2 w-full text-left text-xs">
           <tbody>
-            {rows.map((r) => (
+            {finite.map((r) => (
               <tr key={r.label} className="border-t border-[var(--grid)]">
                 <td className="py-1 pr-2 font-bold text-black/70">{r.label}</td>
                 <td className="py-1 text-right font-black tabular-nums">
