@@ -18,10 +18,11 @@ design: it celebrates the pack, it doesn't track anyone.
 
 Everything is read with the Supabase **anon key** through surfaces that are
 already public on the main site: `public_dog_profiles`, `public_businesses`,
-approved `dog_posts`, `post_likes`, accepted `dog_friendships`, `reviews`, and
-the `breed_counts()` / `pawpularity_leaderboard()` aggregate functions. No
-service-role key, no privileged reads, no personal data beyond what a dog's
-public profile page already shows.
+approved `dog_posts`, `post_likes`, `reviews`, and the `breed_counts()` /
+`friendship_dates()` / `pawpularity_leaderboard()` aggregate functions (with a
+temporary fallback to the old accepted-`dog_friendships` select until the main
+site's schema adds `friendship_dates()`). No service-role key, no privileged
+reads, no personal data beyond what a dog's public profile page already shows.
 
 ## Setup
 
@@ -34,10 +35,19 @@ npm run dev                        # http://localhost:4001
 With no env configured the app renders labelled **sample data**, so you can
 work on the design without touching production.
 
-Stats revalidate hourly (`revalidate = 3600` in `app/page.tsx`).
+Stats revalidate hourly (`revalidate = 3600` in `app/(site)/page.tsx`).
+
+## Sharing
+
+- Pasted links unfurl with a live-stats social card (`app/opengraph-image.tsx`).
+- Each section has an anchor (`#pack-census`, `#social-pulse`, `#local-scene`)
+  and a share button that copies / shares the deep link.
+- `/embed` is a chromeless variant (no header/footer) for iframing the
+  dashboard on the main site.
 
 ## Deploy
 
 It's a stock Next.js 15 app — deploy to Vercel and set the two
 `NEXT_PUBLIC_SUPABASE_*` env vars (plus `NEXT_PUBLIC_SITE_URL` if the main
-site isn't at dogedin.com).
+site isn't at dogedin.com, and `NEXT_PUBLIC_DASHBOARD_URL` for absolute
+social-card URLs).
