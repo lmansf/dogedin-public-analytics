@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   lastWeeks,
   countPerWeek,
@@ -8,13 +9,14 @@ import {
 
 // Everything the page renders, in one fetch. All reads go through public
 // surfaces only: public views (public_dog_profiles, public_businesses),
-// public-select tables (dog_posts approved, post_likes, accepted
-// dog_friendships, reviews of approved businesses) and SECURITY DEFINER
-// aggregate RPCs (breed_counts, pawpularity_leaderboard). When Supabase isn't
-// configured the app renders believable sample data and says so.
+// public-select tables (dog_posts approved, post_likes, reviews of approved
+// businesses) and SECURITY DEFINER aggregate RPCs (breed_counts,
+// friendship_dates, pawpularity_leaderboard). When Supabase isn't configured
+// the app renders believable sample data and says so.
 
 export type PackStats = {
   demo: boolean;
+  degraded: boolean; // true when at least one live query errored (partial data)
   weeks: string[]; // 12 week labels, oldest first
   dogs: {
     total: number;
@@ -56,13 +58,15 @@ export async function getPackStats(): Promise<PackStats> {
         .select("created_at, photo_path, lost_contact_opt_in")
         .limit(10000),
       supabase.rpc("breed_counts"),
-      supabase.from("dog_posts").select("created_at").limit(10000),
-      supabase.from("post_likes").select("created_at").limit(20000),
+      // RLS already only exposes approved posts; filter defensively anyway so
+      // a future policy change can't leak pending/rejected rows into counts.
       supabase
-        .from("dog_friendships")
+        .from("dog_posts")
         .select("created_at")
-        .eq("status", "accepted")
+        .eq("moderation_status", "approved")
         .limit(10000),
+      supabase.from("post_likes").select("created_at").limit(20000),
+      friendshipDates(supabase),
       supabase.rpc("pawpularity_leaderboard", { p_limit: 10 }),
       supabase
         .from("public_businesses")
@@ -70,6 +74,22 @@ export async function getPackStats(): Promise<PackStats> {
         .limit(2000),
       supabase.from("reviews").select("business_id, rating").limit(10000),
     ]);
+
+  // A failed query still renders (as zeros / "No data yet"), but never
+  // silently: log it server-side and flag the page as degraded.
+  const errored = Object.entries({
+    profiles: profilesQ,
+    breeds: breedsQ,
+    posts: postsQ,
+    likes: likesQ,
+    friendships: friendsQ,
+    leaderboard: boardQ,
+    businesses: bizQ,
+    reviews: reviewsQ,
+  }).filter(([, q]) => q.error);
+  for (const [name, q] of errored) {
+    console.error(`[stats] ${name} query failed:`, q.error?.message ?? q.error);
+  }
 
   const profiles = profilesQ.data ?? [];
   const posts = postsQ.data ?? [];
@@ -91,6 +111,7 @@ export async function getPackStats(): Promise<PackStats> {
 
   return {
     demo: false,
+    degraded: errored.length > 0,
     weeks: weeks.map((w) => w.label),
     dogs: {
       total: profiles.length,
@@ -101,9 +122,12 @@ export async function getPackStats(): Promise<PackStats> {
         profiles.length
       ),
       growth: cumulativePerWeek(profileDates, weeks),
-      breeds: ((breedsQ.data as { breed: string; count: number }[]) ?? []).map(
-        (b) => ({ label: b.breed || "Unknown", value: Number(b.count) })
-      ),
+      // breed_counts() returns (breed, dog_count) — see the main site's
+      // supabase/schema.sql. Finite-filtered so a contract drift renders as a
+      // missing row, never as "NaN".
+      breeds: ((breedsQ.data as { breed: string; dog_count: number }[]) ?? [])
+        .map((b) => ({ label: b.breed || "Unknown", value: Number(b.dog_count) }))
+        .filter((b) => Number.isFinite(b.value)),
     },
     social: {
       friendships: friends.length,
@@ -149,6 +173,24 @@ function share(part: number, whole: number): number {
   return whole ? Math.round((100 * part) / whole) : 0;
 }
 
+// Friendship timestamps. The main site is replacing the anon SELECT policy on
+// dog_friendships with a SECURITY DEFINER friendship_dates() RPC (accepted
+// friendships only, dates only). Prefer the RPC; until the owner re-runs
+// schema.sql it won't exist yet, so fall back to the old direct select.
+async function friendshipDates(
+  client: SupabaseClient
+): Promise<{ data: { created_at: string }[] | null; error: { message: string } | null }> {
+  const rpc = await client.rpc("friendship_dates");
+  if (!rpc.error) {
+    return { data: (rpc.data as { created_at: string }[] | null) ?? [], error: null };
+  }
+  return client
+    .from("dog_friendships")
+    .select("created_at")
+    .eq("status", "accepted")
+    .limit(10000);
+}
+
 // ---------------------------------------------------------------------------
 // Sample data — keeps the app fully designed with no env configured. Numbers
 // are believable for a small-town community site, not aspirational.
@@ -157,6 +199,7 @@ function demoStats(): PackStats {
   const weeks = lastWeeks(WEEK_COUNT).map((w: WeekBucket) => w.label);
   return {
     demo: true,
+    degraded: false,
     weeks,
     dogs: {
       total: 87,
