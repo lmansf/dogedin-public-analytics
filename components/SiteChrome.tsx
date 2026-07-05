@@ -1,5 +1,11 @@
 import { SITE_URL } from "@/lib/supabase";
 
+// Optional dashboard sponsor — a sold placement ("Presented by …") that renders
+// only when configured. Set NEXT_PUBLIC_SPONSOR_NAME (+ optional _URL) on the
+// deployment; unset = no strip, nothing to maintain.
+const SPONSOR_NAME = (process.env.NEXT_PUBLIC_SPONSOR_NAME ?? "").trim();
+const SPONSOR_URL = (process.env.NEXT_PUBLIC_SPONSOR_URL ?? "").trim();
+
 // The full-page chrome (header + footer) shared by the (site) layout and the
 // not-found page. The /embed route deliberately skips this so the dashboard
 // can be iframed on the main site without double branding.
@@ -27,6 +33,26 @@ export default function SiteChrome({ children }: { children: React.ReactNode }) 
           </a>
         </div>
       </header>
+      {SPONSOR_NAME && (
+        <div className="border-b-[3px] border-black bg-[var(--gold)]">
+          <p className="mx-auto max-w-5xl px-4 py-1.5 text-center text-[11px] font-black uppercase tracking-wide">
+            Presented by{" "}
+            {SPONSOR_URL ? (
+              <a
+                href={SPONSOR_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline"
+              >
+                {SPONSOR_NAME}
+              </a>
+            ) : (
+              SPONSOR_NAME
+            )}{" "}
+            🐾
+          </p>
+        </div>
+      )}
       <main className="mx-auto max-w-5xl px-4 py-8">{children}</main>
       <footer className="border-t-[3px] border-black bg-white">
         <p className="mx-auto max-w-5xl px-4 py-4 text-xs font-bold text-black/50">
